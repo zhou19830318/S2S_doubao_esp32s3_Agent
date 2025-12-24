@@ -15,7 +15,7 @@ class ESP32RealtimeClient:
     def __init__(self):
         self.I2S_SCK_I, self.I2S_WS_I, self.I2S_SD_I = Pin(5), Pin(6), Pin(7)
         self.I2S_SCK_O, self.I2S_WS_O, self.I2S_SD_O = Pin(12), Pin(11), Pin(13)
-        self.WIFI_SSID, self.WIFI_PASSWORD = "WX-IUHotel-1302", "77777777"
+        self.WIFI_SSID, self.WIFI_PASSWORDWIF"xxx", "xxx"
         self.SERVER_URL = "ws://192.168.1.6:8765"
 
         self.is_running = False
@@ -95,3 +95,4 @@ class ESP32RealtimeClient:
 
 if __name__ == "__main__":
     asyncio.run(ESP32RealtimeClient().start())
+
