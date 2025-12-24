@@ -1,4 +1,4 @@
-# RealtimeDialog
+# Realtime
 
 实时语音对话程序，支持语音输入和语音输出。
 
@@ -23,15 +23,7 @@
    ```bash
    pip install -r requirements.txt
    
-3. 通过麦克风运行程序
+3. 运行客户端的程序
    ```bash
-   python main.py --format=pcm
-   ```
-4. 通过录音文件启动程序
-   ```bash
-   python main.py --audio=whoareyou.wav
-   ```
-5. 通过纯文本输入和程序交互
-   ```bash
-   python main.py --mod=text --recv_timeout=120
+   python esp32_server.py
    ```
