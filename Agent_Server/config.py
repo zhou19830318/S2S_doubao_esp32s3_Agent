@@ -8,7 +8,7 @@ ws_connect_config = {
         "X-Api-App-ID": "xxx",
         "X-Api-Access-Key": "xxx",
         "X-Api-Resource-Id": "volc.speech.dialog",  # 固定值
-        "X-Api-App-Key": "xxx",  # 固定值
+        "X-Api-App-Key": "PlgvMymc7f3tQnJ6",  # 固定值
         "X-Api-Connect-Id": str(uuid.uuid4()),
     }
 }
