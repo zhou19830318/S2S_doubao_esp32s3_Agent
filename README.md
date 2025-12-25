@@ -19,8 +19,7 @@
 ## 仓库结构（重要文件说明）
 
 - Agent_Server/
-  - `main.py` — 服务端入口（启动 WebSocket 服务与桥接逻辑）
-  - `esp32_server.py` — 处理 ESP32 端连接与设备级逻辑
+  - `esp32_server.py` — 服务端入口（启动 WebSocket 服务与桥接逻辑），处理 ESP32 端连接与设备级逻辑
   - `realtime_dialog_client.py` — 与上游实时对话/语音服务交互的适配器
   - `audio_manager.py` — 音频读写、格式转换、保存等辅助函数
   - `bridge_session.py` — 会话管理与消息路由（设备 ↔ 上游）
