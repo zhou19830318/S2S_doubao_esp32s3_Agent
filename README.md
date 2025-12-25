@@ -76,11 +76,10 @@ pip install -r requirements.txt
 示例（伪代码）：
 ```py
 # config.py
-SERVER_HOST = "0.0.0.0"
-SERVER_PORT = 8765
-UPSTREAM_URL = "wss://upstream.example.com/realtime"
-API_KEY = "sk-..."
-AUDIO_SAVE = True
+"X-Api-App-ID": "xxx",
+"X-Api-Access-Key": "xxx",
+"X-Api-Resource-Id": "volc.speech.dialog",  # 固定值
+"X-Api-App-Key": "xxx",  # 固定值
 ```
 
 3. 启动服务：
