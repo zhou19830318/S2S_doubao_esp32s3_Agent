@@ -155,7 +155,3 @@ mpremote connect <your-device> run /main.py
 - 欢迎提交 Issue 或 PR —— 请在描述中包含复现步骤与日志输出，便于定位问题。
 
 ---
-
-如果你希望，我可以：
-- 帮你把本中文 README 写入仓库（需要你确认允许我进行写入以及目标分支），
-- 或者根据 `Agent_Server/config.py` 与 `main.py` 的实际内容把 README 中的配置示例改写为精确的配置片段并同步更新。
