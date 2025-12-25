@@ -5,7 +5,122 @@ import network
 import gc
 import ujson as json
 import uasyncio as asyncio
-from aiohttp import ClientSession
+import ubinascii as binascii
+import urandom as random
+import ustruct as struct
+
+class WebSocket:
+    def __init__(self, reader, writer):
+        self.reader = reader
+        self.writer = writer
+        self.closed = False
+
+    async def send_bytes(self, data):
+        await self._send_frame(0x2, data)
+
+    async def _send_frame(self, opcode, data):
+        if self.closed: return
+        try:
+            header = bytearray()
+            header.append(0x80 | opcode)
+            payload_len = len(data)
+            if payload_len <= 125:
+                header.append(0x80 | payload_len)
+            elif payload_len <= 65535:
+                header.append(0x80 | 126)
+                header.extend(struct.pack("!H", payload_len))
+            else:
+                header.append(0x80 | 127)
+                header.extend(struct.pack("!Q", payload_len))
+            
+            mask = bytes(random.getrandbits(8) for _ in range(4))
+            header.extend(mask)
+            self.writer.write(header)
+            masked_data = bytearray(payload_len)
+            for i in range(payload_len):
+                masked_data[i] = data[i] ^ mask[i % 4]
+            self.writer.write(masked_data)
+            await self.writer.drain()
+        except:
+            self.closed = True
+
+    async def _read_exactly(self, n):
+        res = bytearray()
+        while len(res) < n:
+            chunk = await self.reader.read(n - len(res))
+            if not chunk: raise EOFError()
+            res.extend(chunk)
+        return res
+
+    def __aiter__(self):
+        return self
+
+    async def __anext__(self):
+        while not self.closed:
+            try:
+                res = await self.reader.read(2)
+                if not res or len(res) < 2: break
+                opcode = res[0] & 0x0F
+                has_mask = res[1] & 0x80
+                length = res[1] & 0x7F
+                if length == 126:
+                    length = struct.unpack("!H", await self._read_exactly(2))[0]
+                elif length == 127:
+                    length = struct.unpack("!Q", await self._read_exactly(8))[0]
+                if has_mask:
+                    mask = await self._read_exactly(4)
+                payload = await self._read_exactly(length)
+                if has_mask:
+                    payload = bytearray(payload)
+                    for i in range(length):
+                        payload[i] ^= mask[i % 4]
+                if opcode == 0x8: break
+                if opcode == 0x9:
+                    await self._send_frame(0xA, payload)
+                    continue
+                class Msg:
+                    def __init__(self, t, d):
+                        self.type = t
+                        self.data = d
+                if opcode == 0x1: return Msg(0x1, payload.decode())
+                if opcode == 0x2: return Msg(0x2, payload)
+            except: break
+        self.closed = True
+        raise StopAsyncIteration
+
+    async def close(self):
+        if not self.closed:
+            self.closed = True
+            try:
+                await self._send_frame(0x8, b"")
+                self.writer.close()
+                await self.writer.wait_closed()
+            except: pass
+
+async def connect_ws(url):
+    proto, _, host_port_path = url.split("/", 2)
+    if "/" in host_port_path:
+        host_port, path = host_port_path.split("/", 1)
+        path = "/" + path
+    else:
+        host_port, path = host_port_path, "/"
+    if ":" in host_port:
+        host, port = host_port.split(":")
+        port = int(port)
+    else:
+        host, port = host_port, 80
+    reader, writer = await asyncio.open_connection(host, port)
+    key = binascii.b2a_base64(bytes(random.getrandbits(8) for _ in range(16)))[:-1].decode()
+    header = "GET %s HTTP/1.1\r\nHost: %s\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: %s\r\nSec-WebSocket-Version: 13\r\n\r\n" % (path, host, key)
+    writer.write(header.encode())
+    await writer.drain()
+    line = await reader.readline()
+    if not line.startswith(b"HTTP/1.1 101"):
+        raise Exception("Handshake failed: " + line.decode())
+    while True:
+        line = await reader.readline()
+        if line == b"\r\n" or not line: break
+    return WebSocket(reader, writer)
 
 class ESP32RealtimeClient:
     """
@@ -15,7 +130,7 @@ class ESP32RealtimeClient:
     def __init__(self):
         self.I2S_SCK_I, self.I2S_WS_I, self.I2S_SD_I = Pin(5), Pin(6), Pin(7)
         self.I2S_SCK_O, self.I2S_WS_O, self.I2S_SD_O = Pin(12), Pin(11), Pin(13)
-        self.WIFI_SSID, self.WIFI_PASSWORDWIF"xxx", "xxx"
+        self.WIFI_SSID, self.WIFI_PASSWORD = "WX-IUHotel-1302", "77777777"
         self.SERVER_URL = "ws://192.168.1.6:8765"
 
         self.is_running = False
@@ -81,18 +196,19 @@ class ESP32RealtimeClient:
     async def start(self):
         while True:
             try:
-                async with ClientSession() as session:
-                    async with session.ws_connect(self.SERVER_URL) as ws:
-                        print("Connected.")
-                        self.ws = ws
-                        self.is_running = True
-                        # 仅运行两个核心任务
-                        await asyncio.gather(self.record_task(), self.play_and_recv_task())
-            except:
+                ws = await connect_ws(self.SERVER_URL)
+                print("Connected.")
+                self.ws = ws
+                self.is_running = True
+                # 仅运行两个核心任务
+                await asyncio.gather(self.record_task(), self.play_and_recv_task())
+            except Exception as e:
+                print(f"Connection error: {e}")
                 self.is_running = False
+                if self.ws:
+                    await self.ws.close()
                 await asyncio.sleep(3)
                 gc.collect()
 
 if __name__ == "__main__":
     asyncio.run(ESP32RealtimeClient().start())
-
