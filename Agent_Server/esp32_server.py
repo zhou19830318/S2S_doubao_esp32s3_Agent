@@ -6,7 +6,7 @@ from bridge_session import BridgeDialogSession
 
 class ESP32WebSocketServer:
     """
-    ESP32 中转服务器 (终极优化版)
+    ESP32 中转服务器
     针对 ESP32 内存有限和网络不稳定的特性进行了专门优化
     """
     def __init__(self, host="0.0.0.0", port=8765):
