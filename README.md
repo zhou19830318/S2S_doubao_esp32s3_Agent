@@ -1,156 +1,185 @@
-# S2S_doubao_esp32s3_Agent
+# ESP32 实时语音助手（基于火山引擎）
 
-这是一个用于将 ESP32‑S3 设备与上游火山引擎实时对话/语音api服务进行低延迟桥接的轻量级工程。项目分为两部分：
+一个完整的ESP32实时语音对话系统，通过火山引擎的语音技术实现智能语音交互。
 
-- Agent_Server：运行在主机/服务器上的桥接服务，负责接收来自 ESP32 的音频流、与上游实时会话服务端api交互，并把返回的音频与控制消息下发给设备。
-- esp32_client.py：在 ESP32‑S3（MicroPython）上运行的示例客户端，使用 I2S 进行采集与播放，通过 WebSocket 双向传输音频（binary = 音频数据，text = 控制/事件）。
+## 🌟 项目概述
 
----
+本项目将带你从零开始构建一个功能强大的ESP32实时语音对话系统。利用火山引擎的语音技术，配合Python中转服务器，让ESP32开发板也能实现流畅、智能的语音交互。
 
-## 主要特性
+### 主要功能
+- **实时语音识别（ASR）**：将用户的语音流实时转换为文字
+- **智能对话**：对识别出的文字进行理解，并生成回复文本
+- **实时语音合成（TTS）**：将回复文本实时合成为语音流
+- **完整交互闭环**：录音 -> 识别 -> 对话 -> 合成 -> 播放
 
-- 以硬件 I2S DMA 缓冲为主的“硬件缓冲优先”策略，降低软件层队列与协程切换带来的抖动。
-- 双向 WebSocket 传输：二进制帧用于音频流，文本帧用于控制与事件。
-- 服务端负责会话管理、音频文件处理与上游实时对话客户端的适配（ASR/TTS/LLM）。
-- 提供 ESP32 端示例，便于在实际硬件上快速验证与调试。
+## 🏗️ 技术架构
 
----
+### ESP32客户端 (MicroPython)
+- 通过I2S麦克风实时采集音频数据
+- 通过WebSocket将音频数据流式传输到中转服务器
+- 接收中转服务器下发的音频流，并通过I2S功放播放
 
-## 仓库结构（重要文件说明）
+### Python中转服务器
+- 接收ESP32的WebSocket连接
+- 与火山引擎的WebSocket服务建立连接并处理认证逻辑
+- 在两条WebSocket连接之间高效、低延迟地双向转发音频数据流
 
-- Agent_Server/
-  - `esp32_server.py` — 服务端入口（启动 WebSocket 服务与桥接逻辑），处理 ESP32 端连接与设备级逻辑
-  - `realtime_dialog_client.py` — 与上游实时对话/语音服务交互的适配器
-  - `audio_manager.py` — 音频读写、格式转换、保存等辅助函数
-  - `bridge_session.py` — 会话管理与消息路由（设备 ↔ 上游）
-  - `protocol.py` — 协议定义（消息类型与控制命令）
-  - `config.py` — 服务端配置（监听地址、上游地址、API KEY 等）
-  - `requirements.txt` — Python 依赖列表
-  - 若干示例音频（用于本地测试）
-- `esp32_client.py` — ESP32‑S3（MicroPython）示例客户端
-- `readme.md` — 本文件
+### 火山引擎 (提供PaaS能力)
+- 实时语音识别服务
+- 对话系统
+- 实时语音合成服务
 
----
+## 📋 硬件准备
 
-## 设计与协议要点
+### 必需硬件
+- **主控**: ESP32-S3开发板（推荐，性能更优）
+- **音频输入**: I2S麦克风模块（推荐INMP441，信噪比高）
+- **音频输出**: I2S功放模块和扬声器（推荐MAX98357A模块）
+- **连接线**: 杜邦线若干
 
-- 二进制 WebSocket 帧：直接承载 PCM 音频数据块，服务端收到后可直接转发或写入文件用于调试。
-- 文本 WebSocket 帧：控制/事件消息（例如 `{"type":"control","action":"stop"}` 或会话元信息）。
-- 服务端职责：接收设备音频 → 转发/送入上游实时客户端 → 将上游返回的音频二进制帧下发给设备；并在必要时通过文本帧下发控制命令。
-- 设计原则：在设备端尽量依赖 I2S 硬件缓冲以降低延迟与丢帧风险，服务端负责集中管理与与上游协议的对接。
+### 接线参考
+| 模块名称 | 引脚 | 连接至ESP32-S3 |
+|---------|------|---------------|
+| INMP441 (麦克风) | SCK | GPIO5 |
+| | WS | GPIO6 |
+| | SD | GPIO7 |
+| MAX98357A (功放) | BCLK | GPIO12 |
+| | LRC | GPIO11 |
+| | DIN | GPIO13 |
+| 通用引脚 | VDD/VIN | 3.3V |
+| | GND | GND |
 
----
+> **注意**: 以上为默认引脚配置，可根据实际情况在代码中修改。
 
-## 环境与依赖
+## 🚀 快速开始
 
-服务端（Agent_Server）：
-- Python 3.8+（推荐 3.10+）
-- 依赖见 `Agent_Server/requirements.txt`（例如 aiohttp、websockets、pydub/soundfile 等根据适配器而异）
+### 第一步：准备工作
+1. **软件环境**
+   - Python 3.7或更高版本
+   - MicroPython IDE（推荐Thonny）
+   - Git
 
-ESP32 设备端：
-- ESP32‑S3 开发板，刷入支持 I2S 的 MicroPython 固件（或能使用示例中 WebSocket 客户端的环境）
-- I2S 麦克风与 I2S DAC/扬声器或支持 I2S 的音频外设
+2. **云服务账号**
+   - 访问[火山引擎官网](https://www.volcengine.com/)注册账号
+   - 开通相关服务并获取`App-ID`和`Access-Key`
 
----
-
-## 快速开始 — 服务端（Agent_Server）
-
-1. 创建虚拟环境并安装依赖：
+### 第二步：服务器端部署
 ```bash
-cd Agent_Server
-python3 -m venv .venv
-source .venv/bin/activate   # Linux / macOS
-# Windows: .venv\Scripts\activate
-pip install -r requirements.txt
+# 1. 克隆项目代码
+git clone https://github.com/zhou19830318/S2S_doubao_esp32s3_Agent.git
+cd S2S_doubao_esp32s3_Agent
+
+# 2. 创建并激活虚拟环境
+python -m venv venv
+# Windows:
+venv\Scripts\activate
+# macOS/Linux:
+source venv/bin/activate
+
+# 3. 安装依赖
+pip install -r Agent_Server/requirements.txt
+
+# 4. 配置密钥
+# 打开 Agent_Server/config.py 文件
+# 修改 ws_connect_config 中的 App-ID 和 Access-Key
+
+# 5. 测试API连接
+python Agent_Server/local_agent_test.py
+
+# 6. 启动服务器
+python Agent_Server/esp32_server.py
 ```
 
-2. 配置：
-- 编辑 `Agent_Server/config.py`，常见需设置项：
-  - SERVER_HOST（例如 "0.0.0.0"）
-  - SERVER_PORT（例如 8765）
-  - UPSTREAM_URL（上游实时服务的地址，如 wss://...）
-  - API_KEY（若上游需要）
-  - AUDIO_SAVE_PATH、LOG_LEVEL 等
+### 第三步：客户端部署
+1. **刷入MicroPython固件**
+   - 从[MicroPython官网](https://micropython.org/download/esp32/)下载固件
+   - 使用esptool.py刷入ESP32
 
-示例（伪代码）：
-```py
-# config.py
-"X-Api-App-ID": "xxx",
-"X-Api-Access-Key": "xxx",
-"X-Api-Resource-Id": "volc.speech.dialog",  # 固定值
-"X-Api-App-Key": "xxx",  # 固定值
+2. **配置客户端**
+   - 使用Thonny IDE连接ESP32
+   - 上传`esp32_client.py`到ESP32
+   - 修改以下配置：
+     ```python
+     # 修改Wi-Fi信息
+     self.WIFI_SSID, self.WIFI_PASSWORD = "你的WiFi名称", "你的WiFi密码"
+     
+     # 修改服务器IP地址
+     self.SERVER_URL = "ws://192.168.1.6:8765"  # 替换为电脑的局域网IP
+     
+     # (可选) 修改I2S引脚配置
+     ```
+
+3. **运行客户端**
+   - 在Thonny中按F5运行代码
+   - 观察REPL输出，确认连接成功
+
+## 🔧 联调与验证
+
+成功部署后：
+1. **ESP32端**显示：
+   ```
+   WiFi Connected: 192.168.1.8
+   [WS] Handshake successful.
+   [System] Connected to server.
+   ```
+
+2. **服务器端**显示：
+   ```
+   [Server] New connection: ...
+   ```
+
+3. **测试**：
+   - 对着麦克风说"你好"
+   - 服务器端开始打印云端会话日志
+   - ESP32扬声器播放豆包的回复
+
+## ❓ 常见问题
+
+### 1. ESP32无法连接Wi-Fi
+- ✅ 检查`WIFI_SSID`和`WIFI_PASSWORD`是否正确
+- ✅ 确保使用2.4GHz Wi-Fi（ESP32对5GHz支持不佳）
+
+### 2. 无法连接服务器
+- ✅ 确认`SERVER_URL`中的IP地址是服务器电脑的当前局域网IP
+- ✅ 确保ESP32和电脑在同一Wi-Fi网络下
+- ✅ 检查防火墙设置，允许8765端口访问
+
+### 3. 没有声音或声音异常
+- ✅ 检查I2S引脚接线是否与代码定义一致
+- ✅ 确认麦克风和功放模块的VDD和GND连接正确
+- ✅ 调试`record_task`，确认能读到音频数据
+
+## 📁 项目结构
+```
+S2S_doubao_esp32s3_Agent/
+├── Agent_Server/
+│   ├── config.py          # 服务器配置（密钥等）
+│   ├── esp32_server.py    # 主服务器文件
+│   ├── local_agent_test.py # API测试文件
+│   └── requirements.txt    # Python依赖
+├── esp32_client.py        # ESP32客户端主文件
+└── README.md              # 项目说明文档
 ```
 
-3. 启动服务：
-```bash
-python main.py
-```
-- 服务启动后会监听 WebSocket 连接，日志会输出设备连接、会话创建、音频收发等信息。
+## 🎯 扩展功能
 
----
+基于此项目，你可以进一步探索：
+- **自定义唤醒词**：集成轻量级本地唤醒词引擎
+- **智能家居控制**：通过语音控制灯光、开关等设备
+- **机器人交互**：作为机器人的语音交互中枢
+- **多语言支持**：扩展支持更多语言的识别和合成
 
-## 快速开始 — ESP32‑S3（esp32_client.py）
+## 📄 许可证
 
-说明：
-- 示例基于 MicroPython 风格实现，使用 I2S 进行录音/播放并通过 WebSocket 传输二进制音频帧与文本控制帧。
-- 请根据你的硬件调整脚位、采样率与缓冲区大小；如设备上无 aiohttp，可替换成 uwebsockets 等可用库。
+本项目遵循MIT许可证。详见LICENSE文件。
 
-需要修改的项（文件顶部）：
-- WIFI_SSID / WIFI_PASSWORD：WiFi 名称与密码
-- SERVER_URL：指向运行 Agent_Server 的地址，例如 `ws://192.168.1.6:8765`
-- I2S 引脚、采样率（采样与播放率可能不同，按需要调整）
+## 🤝 贡献指南
 
-上传与运行（示例使用 mpremote）：
-```bash
-mpremote connect <your-device> fs cp esp32_client.py :/main.py
-mpremote connect <your-device> run /main.py
-```
+欢迎提交Issue和Pull Request来改进本项目。
 
-注意：
-- 示例默认录音 16 kHz、16-bit 单声道；播放可使用 24 kHz 或其它，根据硬件选型调整。
-- 在播放端使用较大的 ibuf 值以利用硬件 DMA 缓冲，减少丢帧。
+## 🔗 相关链接
 
----
-
-## 常见问题排查
-
-- 无法连接 WiFi：
-  - 检查 WIFI_SSID/WIFI_PASSWORD 是否正确，确认设备在路由器覆盖范围内。
-- 设备连接上但无音频：
-  - 检查 I2S 引脚接线、麦克风/扬声器是否供电并正确初始化、采样率与位深是否一致。
-- 服务端未收到数据：
-  - 检查 `main.py` 日志确认 WebSocket 握手是否成功；确认 `SERVER_URL` 与 `config.py` 中的端口一致；防火墙是否阻挡端口。
-- 音频抖动或丢帧：
-  - 增大 I2S ibuf，减少设备端其它阻塞任务，确保使用局域网以降低网络抖动。
-- 文本消息解析错误：
-  - 确认文本帧遵循 `protocol.py` 中定义的格式（JSON 字段与类型）。
-
----
-
-## 开发与扩展建议
-
-- 将上游适配逻辑写在 `realtime_dialog_client.py`：根据上游 API（ASR/TTS/LLM），实现音频转发、事件回调与鉴权流程。
-- `bridge_session.py` 管理会话生命周期与状态转换，阅读该文件能快速了解设备与上游之间的路由逻辑。
-- `audio_manager.py` 提供音频保存、重采样与格式转换的工具，便于在调试时保存原始音频以分析问题。
-
----
-
-## 协议示例（简要）
-
-- 文本控制示例：
-```json
-{"type":"control","action":"stop"}
-{"type":"meta","session_id":"abc123","sample_rate":16000}
-```
-- 二进制帧：固定大小的 PCM 数据块（服务端/设备应约定 chunk 大小或以 I2S 缓冲对齐）。
-
-完整消息类型与字段请参考 `Agent_Server/protocol.py`。
-
----
-
-## 许可与贡献
-
-- 当前仓库顶层未包含 LICENSE 文件。若计划公开或分发，请在仓库中添加合适的许可证（例如 MIT）。
-- 欢迎提交 Issue 或 PR —— 请在描述中包含复现步骤与日志输出，便于定位问题。
-
----
+- [火山引擎官网](https://www.volcengine.com/)
+- [MicroPython官网](https://micropython.org/)
+- [Thonny IDE](https://thonny.org/)
+- [ESP32官方文档](https://docs.espressif.com/)
