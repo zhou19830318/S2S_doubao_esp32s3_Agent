@@ -169,9 +169,10 @@ class RealtimeDialogClient:
         payload_bytes = gzip.compress(payload_bytes)
         finish_connection_request.extend((len(payload_bytes)).to_bytes(4, 'big'))
         finish_connection_request.extend(payload_bytes)
-        await self.ws.send(finish_connection_request)
-        response = await self.ws.recv()
-        print(f"FinishConnection response: {protocol.parse_response(response)}")
+        try:
+            await self.ws.send(finish_connection_request)
+        except Exception as e:
+            print(f"FinishConnection send error: {e}")
 
     async def close(self) -> None:
         """关闭WebSocket连接"""
