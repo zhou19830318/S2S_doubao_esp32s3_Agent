@@ -41,7 +41,8 @@ class WebSocket:
                 masked_data[i] = data[i] ^ mask[i % 4]
             self.writer.write(masked_data)
             await self.writer.drain()
-        except:
+        except Exception as e:
+            print(f"[WS] Send error: {e}")
             self.closed = True
 
     async def _read_exactly(self, n):
@@ -82,10 +83,17 @@ class WebSocket:
                     def __init__(self, t, d):
                         self.type = t
                         self.data = d
-                if opcode == 0x1: return Msg(0x1, payload.decode())
-                if opcode == 0x2: return Msg(0x2, payload)
-            except: break
+                if opcode == 0x1: 
+                    # print(f"[WS] Recv Opcode 0x1 (Text), Len: {length}")
+                    return Msg(0x1, payload.decode())
+                if opcode == 0x2: 
+                    # print(f"[WS] Recv Opcode 0x2 (Binary), Len: {length}")
+                    return Msg(0x2, payload)
+            except Exception as e:
+                print(f"[WS] Recv error in __anext__: {e}")
+                break
         self.closed = True
+        print("[WS] Iterator closed, raising StopAsyncIteration")
         raise StopAsyncIteration
 
     async def close(self):
@@ -142,6 +150,7 @@ class ESP32RealtimeClient:
 
         self.is_running = False
         self.ws = None
+        self.audio_queue = [] # 软件音频队列，用于解耦接收和播放
 
         self.init_wifi()
         self.init_i2s()
@@ -187,44 +196,81 @@ class ESP32RealtimeClient:
                 print(f"[Record] Error: {e}")
                 break
 
-    async def play_and_recv_task(self):
-        """核心：将接收和播放合并为一个任务，彻底消除队列和协程切换延迟"""
-        print("[Play] Combined Play/Recv task started.")
-        total_recv = 0
-        last_log_recv = 0
-        first_audio = True
+    async def recv_task(self):
+        """仅负责接收 WebSocket 数据，保证打断指令能被立即处理"""
+        print("[Recv] Task started.")
         try:
             async for msg in self.ws:
                 if not self.is_running: break
                 
                 if msg.type == 0x2: # BINARY AUDIO
-                    if first_audio:
-                        print("[Play] First audio packet received!")
-                        first_audio = False
-                    
-                    # 收到数据立即同步喂给 I2S 硬件缓冲
-                    # 如果 ibuf 满了，write 会自动阻塞并产生 WebSocket 背压
-                    self.audio_out.write(msg.data)
-                    total_recv += len(msg.data)
-                    
-                    # Log every ~24KB (approx 1s of 24k/16bit/mono)
-                    if total_recv - last_log_recv >= 24000:
-                        print(f"[Play] Received {total_recv // 1024} KB")
-                        last_log_recv = total_recv
+                    # 将音频放入队列，不阻塞接收循环
+                    self.audio_queue.append(msg.data)
+                    # 限制队列长度防止内存溢出 (约 2s 的音频)
+                    if len(self.audio_queue) > 40:
+                        self.audio_queue.pop(0)
                 
                 elif msg.type == 0x1: # TEXT
-                    print(f"[Msg] Text received: {msg.data}")
-                    if "stop" in msg.data:
-                        print("[Play] Stop command received. Clearing buffer.")
-                        # 停止播放：通过切换模式清空硬件缓冲 (MicroPython 特有技巧)
-                        self.audio_out.deinit()
-                        self.init_i2s()
+                    print(f"[WS Text Raw] {msg.data}") # 必须打印！
+                    try:
+                        data = json.loads(msg.data)
+                        # 处理结构化消息
+                        if isinstance(data, dict):
+                            msg_type = data.get("type")
+                            if msg_type == "asr":
+                                print(f"\n[User] {data.get('text')}")
+                            elif msg_type == "llm":
+                                print(f"\n[Doubao] {data.get('text')}")
+                            
+                            # 处理打断指令 (兼容合并后的消息)
+                            if data.get("command") == "stop":
+                                print("[Play] Stop command received!")
+                                self.audio_queue.clear()
+                                self.audio_out.deinit()
+                                self.init_i2s()
+                        else:
+                            print(f"[Msg JSON] {data}")
+                    except Exception as e:
+                        print(f"[Msg Parse Error] {e}: {msg.data}")
+                        if "stop" in msg.data:
+                            self.audio_queue.clear()
+                            self.audio_out.deinit()
+                            self.init_i2s()
+                else:
+                    print(f"[WS Recv Other] Type: {msg.type}") # 新增调试：打印收到其他类型的消息
                 
-                # 尽量不在这里做任何耗时操作
                 await asyncio.sleep(0)
         except Exception as e:
-            print(f"[Play] Stream error: {e}")
+            print(f"[Recv] Error: {e}")
             self.is_running = False
+        finally:
+            print(f"[Recv] Task finished, ws.closed={self.ws.closed if self.ws else None}")
+            self.is_running = False
+
+    async def play_task(self):
+        """仅负责从队列取数据并喂给 I2S 硬件"""
+        print("[Play] Task started.")
+        total_played = 0
+        last_log_played = 0
+        while self.is_running:
+            try:
+                if self.audio_queue:
+                    data = self.audio_queue.pop(0)
+                    # write 会在硬件缓冲区满时自动阻塞
+                    # 注意：在 MicroPython 中，如果 write 阻塞，它会阻塞整个 asyncio 循环
+                    # 所以我们需要确保在写入前后都有 yield 机会
+                    self.audio_out.write(data)
+                    total_played += len(data)
+                    
+                    if total_played - last_log_played >= 24000:
+                        # print(f"[Play] Played {total_played // 1024} KB")
+                        last_log_played = total_played
+                
+                # 无论是否播放了音频，都必须让出 CPU，否则 recv_task 会被饿死
+                await asyncio.sleep(0) 
+            except Exception as e:
+                print(f"[Play] Error: {e}")
+                break
 
     async def start(self):
         while True:
@@ -234,8 +280,13 @@ class ESP32RealtimeClient:
                 print("[System] Connected to server.")
                 self.ws = ws
                 self.is_running = True
-                # 仅运行两个核心任务
-                await asyncio.gather(self.record_task(), self.play_and_recv_task())
+                self.audio_queue.clear()
+                # 运行三个核心任务：录音、接收、播放
+                await asyncio.gather(
+                    self.record_task(), 
+                    self.recv_task(),
+                    self.play_task()
+                )
             except Exception as e:
                 print(f"[System] Connection error: {e}")
                 self.is_running = False
