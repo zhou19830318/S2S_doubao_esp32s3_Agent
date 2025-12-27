@@ -1,8 +1,15 @@
 import asyncio
 import json
+import time
 import websockets
 import config
 from bridge_session import BridgeDialogSession
+
+
+def log(msg):
+    ts = time.strftime("%H:%M:%S")
+    print(f"[{ts}] {msg}")
+
 
 class ESP32WebSocketServer:
     """
@@ -15,7 +22,11 @@ class ESP32WebSocketServer:
 
     async def handle_esp32_connection(self, websocket, path=None):
         """处理来自 ESP32 的连接"""
-        print(f"[Server] New connection: {websocket.remote_address}")
+        log(f"[Server] New connection: {websocket.remote_address}")
+        up_bytes = 0
+        down_bytes = 0
+        last_up_log = 0
+        last_down_log = 0
     
         # 初始化云端会话，显式指定 PCM 格式以匹配 ESP32
         bridge = BridgeDialogSession(
@@ -25,31 +36,33 @@ class ESP32WebSocketServer:
 
         async def forward_to_esp32(audio_data):
             """将云端音频全速下发给 ESP32 (依靠 WebSocket 背压)"""
+            nonlocal down_bytes, last_down_log
             try:
                 if hasattr(websocket, 'open') and not websocket.open:
                     return
-                
-                # 彻底移除人为延迟和分片，让 TCP 协议栈自动处理流量
-                # WebSocket.send 会在底层缓冲区满时自动进行背压控制
+                down_bytes += len(audio_data)
+                if down_bytes - last_down_log >= 24000:
+                    log(f"[Server] To ESP32 {down_bytes // 1024} KB")
+                    last_down_log = down_bytes
                 await websocket.send(audio_data)
             except websockets.exceptions.ConnectionClosed as e:
-                print(f"[Server] Audio forward closed: code={e.code}, reason={e.reason}")
+                log(f"[Server] Audio forward closed: code={e.code}, reason={e.reason}, down={down_bytes // 1024} KB")
             except Exception as e:
-                print(f"[Server] Audio forward error: {e}")
+                log(f"[Server] Audio forward error: {e}, down={down_bytes // 1024} KB")
 
         async def forward_event_to_esp32(event_id, payload):
             """处理云端业务事件，实现打断功能"""
             # 修正：3001 是火山引擎协议中的 VAD_BEGIN (检测到开始说话)
             # 150 是 ASR 识别过程中的中间状态
             # 只有在这些真正代表用户说话的时刻才发送 stop 指令
-            if event_id in [3001, 150]: 
-                print(f"[Server] Interruption detected (Event {event_id}). Sending stop command.")
+            if event_id in [3001, 150]:
+                log(f"[Server] Interruption detected (Event {event_id}). Sending stop command.")
                 try:
                     if hasattr(websocket, 'open') and not websocket.open:
                         return
                     await websocket.send(json.dumps({"command": "stop"}))
                 except Exception as e:
-                    print(f"[Server] Stop command error: {e}")
+                    log(f"[Server] Stop command error: {e}")
 
         bridge.on_audio_received = forward_to_esp32
         bridge.on_event_received = forward_event_to_esp32
@@ -57,12 +70,16 @@ class ESP32WebSocketServer:
         try:
             # 1. 建立云端连接
             await bridge.start()
-            print("[Server] Cloud bridge session started.")
+            log("[Server] Cloud bridge session started.")
             
             # 2. 接收来自 ESP32 的音频数据流
             async for message in websocket:
                 if isinstance(message, bytes):
                     # 收到 ESP32 的原始音频 (16k, 16bit, Mono)
+                    up_bytes += len(message)
+                    if up_bytes - last_up_log >= 10240:
+                        print(f"[Server] From ESP32 {up_bytes // 1024} KB")
+                        last_up_log = up_bytes
                     await bridge.send_audio(message)
                 else:
                     # 收到 ESP32 的控制或文本指令
@@ -74,15 +91,15 @@ class ESP32WebSocketServer:
                         pass
 
         except websockets.exceptions.ConnectionClosed as e:
-            print(f"[Server] ESP32 disconnected: {websocket.remote_address}, code={e.code}, reason={e.reason}")
+            log(f"[Server] ESP32 disconnected: {websocket.remote_address}, code={e.code}, reason={e.reason}, up={up_bytes // 1024} KB, down={down_bytes // 1024} KB")
         except Exception as e:
-            print(f"[Server] Main loop error: {e}")
+            log(f"[Server] Main loop error: {e}, up={up_bytes // 1024} KB, down={down_bytes // 1024} KB")
         finally:
             await bridge.stop()
-            print(f"[Server] Session closed for {websocket.remote_address}")
+            log(f"[Server] Session closed for {websocket.remote_address}")
 
     async def start(self):
-        print(f"[Server] Running on ws://{self.host}:{self.port}")
+        log(f"[Server] Running on ws://{self.host}:{self.port}")
         async with websockets.serve(self.handle_esp32_connection, self.host, self.port):
             await asyncio.Future()
 
@@ -91,4 +108,4 @@ if __name__ == "__main__":
     try:
         asyncio.run(server.start())
     except KeyboardInterrupt:
-        print("\n[Server] Stopped")
+        log("[Server] Stopped")
