@@ -1,10 +1,10 @@
-# ESP32 实时语音助手（基于火山引擎）
+# ESP32-S3 实时语音助手（基于火山引擎）
 
-一个完整的ESP32实时语音对话系统，通过火山引擎的语音技术实现智能语音交互。
+一个完整的ESP32-S3实时语音对话系统，通过火山引擎的语音技术实现智能语音交互。
 
 ## 🌟 项目概述
 
-本项目将带你从零开始构建一个功能强大的ESP32实时语音对话系统。利用火山引擎的语音技术，配合Python中转服务器，让ESP32开发板也能实现流畅、智能的语音交互。
+本项目将带你从零开始构建一个功能强大的ESP32-S3实时语音对话系统。利用火山引擎的语音技术，配合Python中转服务器，让ESP32-S3开发板也能实现流畅、智能的语音交互。
 
 ### 主要功能
 - **实时语音识别（ASR）**：将用户的语音流实时转换为文字
@@ -14,13 +14,13 @@
 
 ## 🏗️ 技术架构
 
-### ESP32客户端 (MicroPython)
+### ESP32-S3客户端 (MicroPython)
 - 通过I2S麦克风实时采集音频数据
 - 通过WebSocket将音频数据流式传输到中转服务器
 - 接收中转服务器下发的音频流，并通过I2S功放播放
 
 ### Python中转服务器
-- 接收ESP32的WebSocket连接
+- 接收ESP32-S3的WebSocket连接
 - 与火山引擎的WebSocket服务建立连接并处理认证逻辑
 - 在两条WebSocket连接之间高效、低延迟地双向转发音频数据流
 
@@ -92,12 +92,12 @@ python Agent_Server/esp32_server.py
 
 ### 第三步：客户端部署
 1. **刷入MicroPython固件**
-   - 从[MicroPython官网](https://micropython.org/download/esp32/)下载固件
-   - 使用esptool.py刷入ESP32
+   - 从[MicroPython官网](https://micropython.org/download/ESP32_GENERIC_S3/)下载固件
+   - 使用esptool.py刷入ESP32-S3
 
 2. **配置客户端**
-   - 使用Thonny IDE连接ESP32
-   - 上传`esp32_client.py`到ESP32
+   - 使用Thonny IDE连接ESP32-S3
+   - 上传`esp32_client.py`到ESP32-S3
    - 修改以下配置：
      ```python
      # 修改Wi-Fi信息
@@ -116,7 +116,7 @@ python Agent_Server/esp32_server.py
 ## 🔧 联调与验证
 
 成功部署后：
-1. **ESP32端**显示：
+1. **ESP32-S3端**显示：
    ```
    WiFi Connected: 192.168.1.8
    [WS] Handshake successful.
@@ -131,17 +131,17 @@ python Agent_Server/esp32_server.py
 3. **测试**：
    - 对着麦克风说"你好"
    - 服务器端开始打印云端会话日志
-   - ESP32扬声器播放豆包的回复
+   - ESP32-S3扬声器播放豆包的回复
 
 ## ❓ 常见问题
 
-### 1. ESP32无法连接Wi-Fi
+### 1. ESP32-S3无法连接Wi-Fi
 - ✅ 检查`WIFI_SSID`和`WIFI_PASSWORD`是否正确
-- ✅ 确保使用2.4GHz Wi-Fi（ESP32对5GHz支持不佳）
+- ✅ 确保使用2.4GHz Wi-Fi（ESP32-S3对5GHz支持不佳）
 
 ### 2. 无法连接服务器
 - ✅ 确认`SERVER_URL`中的IP地址是服务器电脑的当前局域网IP
-- ✅ 确保ESP32和电脑在同一Wi-Fi网络下
+- ✅ 确保ESP32-S3和电脑在同一Wi-Fi网络下
 - ✅ 检查防火墙设置，允许8765端口访问
 
 ### 3. 没有声音或声音异常
