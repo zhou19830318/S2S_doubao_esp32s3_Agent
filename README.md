@@ -110,7 +110,6 @@ python Agent_Server/esp32_server.py
      # 修改服务器IP地址
      self.SERVER_URL = "ws://192.168.1.6:8765"  # 替换为电脑的局域网IP
      
-     # (可选) 修改I2S引脚配置
      ```
 
 3. **运行客户端**
