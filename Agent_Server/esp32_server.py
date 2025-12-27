@@ -51,10 +51,48 @@ class ESP32WebSocketServer:
                 log(f"[Server] Audio forward error: {e}, down={down_bytes // 1024} KB")
 
         async def forward_event_to_esp32(event_id, payload):
-            """处理云端业务事件，实现打断功能"""
-            # 修正：3001 是火山引擎协议中的 VAD_BEGIN (检测到开始说话)
-            # 150 是 ASR 识别过程中的中间状态
-            # 只有在这些真正代表用户说话的时刻才发送 stop 指令
+            asr_text = None
+            llm_text = None
+            try:
+                def walk(obj, asr_keys, llm_keys, found):
+                    if isinstance(obj, dict):
+                        for k, v in obj.items():
+                            if isinstance(v, str):
+                                if not found[0] and k in asr_keys:
+                                    found[0] = v
+                                if not found[1] and k in llm_keys:
+                                    found[1] = v
+                            else:
+                                walk(v, asr_keys, llm_keys, found)
+                    elif isinstance(obj, list):
+                        for item in obj:
+                            walk(item, asr_keys, llm_keys, found)
+
+                if isinstance(payload, dict):
+                    found = [None, None]
+                    asr_keys = ("asr_text", "user_text", "question", "transcript", "input_text")
+                    llm_keys = ("llm_text", "bot_text", "answer", "reply_text", "output_text")
+                    walk(payload, asr_keys, llm_keys, found)
+                    asr_text, llm_text = found[0], found[1]
+            except Exception as e:
+                try:
+                    log(f"[Server] Event parse error for {event_id}: {e}, payload={payload}")
+                except Exception:
+                    log(f"[Server] Event parse error for {event_id}: {e}")
+
+            any_text = False
+            if asr_text:
+                log(f"[ASR] {asr_text}")
+                any_text = True
+            if llm_text:
+                log(f"[LLM] {llm_text}")
+                any_text = True
+            if not any_text:
+                try:
+                    log(f"[Server] Event {event_id} payload={json.dumps(payload, ensure_ascii=False)}")
+                except Exception:
+                    log(f"[Server] Event {event_id} payload={payload}")
+
             if event_id in [3001, 150]:
                 log(f"[Server] Interruption detected (Event {event_id}). Sending stop command.")
                 try:
