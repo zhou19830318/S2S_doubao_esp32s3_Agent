@@ -9,6 +9,15 @@ import ubinascii as binascii
 import urandom as random
 import ustruct as struct
 
+
+MAX_RECORD_BYTES = 1024 * 1024
+
+
+def log(msg):
+    t = time.localtime()
+    print("[{:02d}:{:02d}:{:02d}] {}".format(t[3], t[4], t[5], msg))
+
+
 class WebSocket:
     def __init__(self, reader, writer):
         self.reader = reader
@@ -42,8 +51,9 @@ class WebSocket:
             self.writer.write(masked_data)
             await self.writer.drain()
         except Exception as e:
-            print(f"[WS] Send error: {e}")
+            log(f"[WS] Send error: {e}")
             self.closed = True
+            raise
 
     async def _read_exactly(self, n):
         res = bytearray()
@@ -86,14 +96,14 @@ class WebSocket:
                 if opcode == 0x1: 
                     # print(f"[WS] Recv Opcode 0x1 (Text), Len: {length}")
                     return Msg(0x1, payload.decode())
-                if opcode == 0x2: 
-                    # print(f"[WS] Recv Opcode 0x2 (Binary), Len: {length}")
+                if opcode == 0x2:
                     return Msg(0x2, payload)
             except Exception as e:
-                print(f"[WS] Recv error in __anext__: {e}")
-                break
+                log(f"[WS] Recv error in __anext__: {e}")
+                self.closed = True
+                raise
         self.closed = True
-        print("[WS] Iterator closed, raising StopAsyncIteration")
+        log("[WS] Iterator closed, raising StopAsyncIteration")
         raise StopAsyncIteration
 
     async def close(self):
@@ -106,7 +116,7 @@ class WebSocket:
             except: pass
 
 async def connect_ws(url):
-    print(f"[WS] Connecting to {url}...")
+    log(f"[WS] Connecting to {url}...")
     proto, _, host_port_path = url.split("/", 2)
     if "/" in host_port_path:
         host_port, path = host_port_path.split("/", 1)
@@ -119,14 +129,14 @@ async def connect_ws(url):
     else:
         host, port = host_port, 80
     
-    print(f"[WS] Opening connection to {host}:{port}...")
+    log(f"[WS] Opening connection to {host}:{port}...")
     reader, writer = await asyncio.open_connection(host, port)
     key = binascii.b2a_base64(bytes(random.getrandbits(8) for _ in range(16)))[:-1].decode()
     header = "GET %s HTTP/1.1\r\nHost: %s\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: %s\r\nSec-WebSocket-Version: 13\r\n\r\n" % (path, host, key)
     writer.write(header.encode())
     await writer.drain()
     
-    print("[WS] Waiting for handshake response...")
+    log("[WS] Waiting for handshake response...")
     line = await reader.readline()
     if not line.startswith(b"HTTP/1.1 101"):
         raise Exception("Handshake failed: " + line.decode())
@@ -134,7 +144,7 @@ async def connect_ws(url):
     while True:
         line = await reader.readline()
         if line == b"\r\n" or not line: break
-    print("[WS] Handshake successful.")
+    log("[WS] Handshake successful.")
     return WebSocket(reader, writer)
 
 class ESP32RealtimeClient:
@@ -145,7 +155,7 @@ class ESP32RealtimeClient:
     def __init__(self):
         self.I2S_SCK_I, self.I2S_WS_I, self.I2S_SD_I = Pin(5), Pin(6), Pin(7)
         self.I2S_SCK_O, self.I2S_WS_O, self.I2S_SD_O = Pin(12), Pin(11), Pin(13)
-        self.WIFI_SSID, self.WIFI_PASSWORD = "xxx", "xxx"
+        self.WIFI_SSID, self.WIFI_PASSWORD = "WX-IUHotel-1302", "77777777"
         self.SERVER_URL = "ws://192.168.1.6:8765"
 
         self.is_running = False
@@ -156,15 +166,22 @@ class ESP32RealtimeClient:
         self.init_i2s()
 
     def init_wifi(self):
-        sta = network.WLAN(network.STA_IF)
-        sta.active(True)
-        if not sta.isconnected():
-            sta.connect(self.WIFI_SSID, self.WIFI_PASSWORD)
-            for _ in range(40):
-                if sta.isconnected(): break
-                time.sleep(0.5)
-        if not sta.isconnected(): machine.reset()
-        print("WiFi Connected:", sta.ifconfig()[0])
+        try:
+            sta = network.WLAN(network.STA_IF)
+            sta.active(True)
+            if not sta.isconnected():
+                sta.connect(self.WIFI_SSID, self.WIFI_PASSWORD)
+                for _ in range(40):
+                    if sta.isconnected():
+                        break
+                    time.sleep(0.5)
+            if not sta.isconnected():
+                log("[WiFi] Connect failed, resetting board.")
+                machine.reset()
+            log("WiFi Connected: {}".format(sta.ifconfig()[0]))
+        except Exception as e:
+            log(f"[WiFi] Internal error: {e}, resetting board.")
+            machine.reset()
 
     def init_i2s(self):
         # 录音 I2S
@@ -174,31 +191,39 @@ class ESP32RealtimeClient:
         # 这比任何软件 Python 缓冲都要稳定，因为它不受协程调度干扰
         self.audio_out = I2S(1, sck=self.I2S_SCK_O, ws=self.I2S_WS_O, sd=self.I2S_SD_O,
             mode=I2S.TX, bits=16, format=I2S.MONO, rate=24000, ibuf=16384)
-        print("I2S HW Buffer: 64KB")
+        log("I2S HW Buffer: 64KB")
 
     async def record_task(self):
         read_buf = bytearray(1024)
         total_sent = 0
         last_log_sent = 0
-        print("[Record] Task started.")
+        log("[Record] Task started.")
         while self.is_running:
             try:
                 n = self.audio_in.readinto(read_buf)
                 if n > 0: 
                     await self.ws.send_bytes(read_buf[:n])
                     total_sent += n
+                    if total_sent >= MAX_RECORD_BYTES:
+                        free_kb = gc.mem_free() // 1024
+                        log(f"[Record] Reached limit {total_sent // 1024} KB, free={free_kb} KB, stopping.")
+                        self.is_running = False
+                        break
                     # Log every 10KB
                     if total_sent - last_log_sent >= 10240:
-                        print(f"[Record] Sent {total_sent // 1024} KB")
+                        free_kb = gc.mem_free() // 1024
+                        log(f"[Record] Sent {total_sent // 1024} KB, free={free_kb} KB")
                         last_log_sent = total_sent
                 await asyncio.sleep(0)
-            except Exception as e: 
-                print(f"[Record] Error: {e}")
+            except Exception as e:
+                free_kb = gc.mem_free() // 1024
+                log(f"[Record] Error: {e}, free={free_kb} KB")
+                self.is_running = False
                 break
 
     async def recv_task(self):
         """仅负责接收 WebSocket 数据，保证打断指令能被立即处理"""
-        print("[Recv] Task started.")
+        log("[Recv] Task started.")
         try:
             async for msg in self.ws:
                 if not self.is_running: break
@@ -224,32 +249,36 @@ class ESP32RealtimeClient:
                             
                             # 处理打断指令 (兼容合并后的消息)
                             if data.get("command") == "stop":
-                                print("[Play] Stop command received!")
+                                log("[Play] Stop command received!")
                                 self.audio_queue.clear()
                                 self.audio_out.deinit()
                                 self.init_i2s()
                         else:
-                            print(f"[Msg JSON] {data}")
+                            log(f"[Msg JSON] {data}")
                     except Exception as e:
-                        print(f"[Msg Parse Error] {e}: {msg.data}")
+                        log(f"[Msg Parse Error] {e}: {msg.data}")
                         if "stop" in msg.data:
                             self.audio_queue.clear()
                             self.audio_out.deinit()
                             self.init_i2s()
                 else:
-                    print(f"[WS Recv Other] Type: {msg.type}") # 新增调试：打印收到其他类型的消息
+                    log(f"[WS Recv Other] Type: {msg.type}")
                 
+                if self.audio_queue and len(self.audio_queue) % 20 == 0:
+                    free_kb = gc.mem_free() // 1024
+                    log(f"[Recv] Queue={len(self.audio_queue)}, free={free_kb} KB")
                 await asyncio.sleep(0)
         except Exception as e:
-            print(f"[Recv] Error: {e}")
+            free_kb = gc.mem_free() // 1024
+            log(f"[Recv] Error: {e}, free={free_kb} KB")
             self.is_running = False
         finally:
-            print(f"[Recv] Task finished, ws.closed={self.ws.closed if self.ws else None}")
+            log(f"[Recv] Task finished, ws.closed={self.ws.closed if self.ws else None}")
             self.is_running = False
 
     async def play_task(self):
         """仅负责从队列取数据并喂给 I2S 硬件"""
-        print("[Play] Task started.")
+        log("[Play] Task started.")
         total_played = 0
         last_log_played = 0
         while self.is_running:
@@ -263,21 +292,23 @@ class ESP32RealtimeClient:
                     total_played += len(data)
                     
                     if total_played - last_log_played >= 24000:
-                        # print(f"[Play] Played {total_played // 1024} KB")
+                        free_kb = gc.mem_free() // 1024
+                        log(f"[Play] Played {total_played // 1024} KB, free={free_kb} KB")
                         last_log_played = total_played
                 
                 # 无论是否播放了音频，都必须让出 CPU，否则 recv_task 会被饿死
                 await asyncio.sleep(0) 
             except Exception as e:
-                print(f"[Play] Error: {e}")
+                free_kb = gc.mem_free() // 1024
+                log(f"[Play] Error: {e}, free={free_kb} KB")
                 break
 
     async def start(self):
         while True:
-            print(f"\n[System] Free memory: {gc.mem_free() / 1024:.1f} KB")
+            log(f"[System] Free memory: {gc.mem_free() / 1024:.1f} KB")
             try:
                 ws = await connect_ws(self.SERVER_URL)
-                print("[System] Connected to server.")
+                log("[System] Connected to server.")
                 self.ws = ws
                 self.is_running = True
                 self.audio_queue.clear()
@@ -287,12 +318,20 @@ class ESP32RealtimeClient:
                     self.recv_task(),
                     self.play_task()
                 )
+                reason = None
+                if not self.is_running:
+                    reason = "tasks stopped"
+                elif self.ws and self.ws.closed:
+                    reason = "websocket closed"
+                if reason:
+                    raise Exception(reason)
             except Exception as e:
-                print(f"[System] Connection error: {e}")
+                log(f"[System] Connection error: {e}")
                 self.is_running = False
                 if self.ws:
                     await self.ws.close()
-                print("[System] Retrying in 3 seconds...")
+                    self.ws = None
+                log("[System] Retrying in 3 seconds...")
                 await asyncio.sleep(3)
                 gc.collect()
 
