@@ -10,9 +10,6 @@ import urandom as random
 import ustruct as struct
 
 
-MAX_RECORD_BYTES = 1024 * 1024
-
-
 def log(msg):
     t = time.localtime()
     print("[{:02d}:{:02d}:{:02d}] {}".format(t[3], t[4], t[5], msg))
@@ -204,11 +201,6 @@ class ESP32RealtimeClient:
                 if n > 0: 
                     await self.ws.send_bytes(read_buf[:n])
                     total_sent += n
-                    if total_sent >= MAX_RECORD_BYTES:
-                        free_kb = gc.mem_free() // 1024
-                        log(f"[Record] Reached limit {total_sent // 1024} KB, free={free_kb} KB, stopping.")
-                        self.is_running = False
-                        break
                     # Log every 10KB
                     if total_sent - last_log_sent >= 10240:
                         free_kb = gc.mem_free() // 1024
@@ -307,6 +299,7 @@ class ESP32RealtimeClient:
         while True:
             log(f"[System] Free memory: {gc.mem_free() / 1024:.1f} KB")
             try:
+                self.init_wifi()
                 ws = await connect_ws(self.SERVER_URL)
                 log("[System] Connected to server.")
                 self.ws = ws
@@ -318,13 +311,6 @@ class ESP32RealtimeClient:
                     self.recv_task(),
                     self.play_task()
                 )
-                reason = None
-                if not self.is_running:
-                    reason = "tasks stopped"
-                elif self.ws and self.ws.closed:
-                    reason = "websocket closed"
-                if reason:
-                    raise Exception(reason)
             except Exception as e:
                 log(f"[System] Connection error: {e}")
                 self.is_running = False
@@ -337,3 +323,4 @@ class ESP32RealtimeClient:
 
 if __name__ == "__main__":
     asyncio.run(ESP32RealtimeClient().start())
+
