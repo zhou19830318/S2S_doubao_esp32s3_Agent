@@ -100,6 +100,10 @@ python Agent_Server/esp32_server.py
    - 上传`esp32_client.py`到ESP32-S3
    - 修改以下配置：
      ```python
+     # 修改I2S引脚配置
+     self.I2S_SCK_I, self.I2S_WS_I, self.I2S_SD_I = Pin(5), Pin(6), Pin(7)
+     self.I2S_SCK_O, self.I2S_WS_O, self.I2S_SD_O = Pin(12), Pin(11), Pin(13)
+     
      # 修改Wi-Fi信息
      self.WIFI_SSID, self.WIFI_PASSWORD = "你的WiFi名称", "你的WiFi密码"
      
