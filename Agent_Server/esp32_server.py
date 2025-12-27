@@ -32,8 +32,8 @@ class ESP32WebSocketServer:
                 # 彻底移除人为延迟和分片，让 TCP 协议栈自动处理流量
                 # WebSocket.send 会在底层缓冲区满时自动进行背压控制
                 await websocket.send(audio_data)
-            except websockets.exceptions.ConnectionClosed:
-                pass
+            except websockets.exceptions.ConnectionClosed as e:
+                print(f"[Server] Audio forward closed: code={e.code}, reason={e.reason}")
             except Exception as e:
                 print(f"[Server] Audio forward error: {e}")
 
@@ -73,8 +73,8 @@ class ESP32WebSocketServer:
                     except:
                         pass
 
-        except websockets.exceptions.ConnectionClosed:
-            print(f"[Server] ESP32 disconnected: {websocket.remote_address}")
+        except websockets.exceptions.ConnectionClosed as e:
+            print(f"[Server] ESP32 disconnected: {websocket.remote_address}, code={e.code}, reason={e.reason}")
         except Exception as e:
             print(f"[Server] Main loop error: {e}")
         finally:
