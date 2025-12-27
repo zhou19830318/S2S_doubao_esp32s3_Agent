@@ -116,7 +116,7 @@ class ESP32WebSocketServer:
                     # 收到 ESP32 的原始音频 (16k, 16bit, Mono)
                     up_bytes += len(message)
                     if up_bytes - last_up_log >= 10240:
-                        print(f"[Server] From ESP32 {up_bytes // 1024} KB")
+                        log(f"[Server] From ESP32 {up_bytes // 1024} KB")
                         last_up_log = up_bytes
                     await bridge.send_audio(message)
                 else:
