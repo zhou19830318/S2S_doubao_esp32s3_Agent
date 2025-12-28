@@ -121,24 +121,24 @@ python Agent_Server/esp32_server.py
 成功部署后：
 1. **ESP32-S3端**显示：
    ```
-MPY: soft reboot
-WiFi Connected: 192.168.1.8
-I2S HW Buffer: 64KB
- 
-[System] Free memory: 140.0 KB
-[WS] Connecting to ws://192.168.1.6:8765...
-[WS] Opening connection to 192.168.1.6:8765...
-[WS] Waiting for handshake response...
-[WS] Handshake successful.
-[System] Connected to server.
-[Record] Task started.
-[Recv] Task started.
-[Play] Task started.
-[Record] Sent 10 KB
-[Record] Sent 20 KB
-[Record] Sent 30 KB
-[Record] Sent 40 KB
-...
+   MPY: soft reboot
+   WiFi Connected: 192.168.1.8
+   I2S HW Buffer: 64KB
+    
+   [System] Free memory: 140.0 KB
+   [WS] Connecting to ws://192.168.1.6:8765...
+   [WS] Opening connection to 192.168.1.6:8765...
+   [WS] Waiting for handshake response...
+   [WS] Handshake successful.
+   [System] Connected to server.
+   [Record] Task started.
+   [Recv] Task started.
+   [Play] Task started.
+   [Record] Sent 10 KB
+   [Record] Sent 20 KB
+   [Record] Sent 30 KB
+   [Record] Sent 40 KB
+   ...
    ```
 
 2. **服务器端**显示：
