@@ -8,6 +8,7 @@ import uasyncio as asyncio
 import ubinascii as binascii
 import urandom as random
 import ustruct as struct
+from neopixel import NeoPixel  # 添加neopixel库
 
 
 def log(msg):
@@ -144,26 +145,94 @@ async def connect_ws(url):
     log("[WS] Handshake successful.")
     return WebSocket(reader, writer)
 
+
+class LEDController:
+    """WS2812 LED控制器"""
+    def __init__(self, pin_num=9, num_leds=8):
+        self.pin = Pin(pin_num, Pin.OUT)
+        self.np = NeoPixel(self.pin, num_leds)
+        self.num_leds = num_leds
+        self.current_state = "idle"
+        
+        # 颜色定义 (R, G, B)
+        self.COLORS = {
+            "idle": (0, 0, 0),        # 关闭
+            "listening": (255, 150, 0),  # 黄色 (聆听)
+            "playing": (0, 255, 0),      # 绿色 (播放)
+            "connecting": (0, 0, 255),   # 蓝色 (连接中)
+            "error": (255, 0, 0),        # 红色 (错误)
+        }
+    
+    def set_all(self, color_name):
+        """设置所有LED为指定颜色"""
+        if color_name in self.COLORS:
+            self.current_state = color_name
+            color = self.COLORS[color_name]
+            for i in range(self.num_leds):
+                self.np[i] = color
+            self.np.write()
+    
+    def set_breathing(self, color_name, speed=10):
+        """呼吸灯效果"""
+        if color_name in self.COLORS:
+            base_color = self.COLORS[color_name]
+            # 简单的呼吸效果实现
+            for brightness in range(0, 256, speed):
+                color = tuple(int(c * brightness / 255) for c in base_color)
+                for i in range(self.num_leds):
+                    self.np[i] = color
+                self.np.write()
+                time.sleep_ms(50)
+            for brightness in range(255, -1, -speed):
+                color = tuple(int(c * brightness / 255) for c in base_color)
+                for i in range(self.num_leds):
+                    self.np[i] = color
+                self.np.write()
+                time.sleep_ms(50)
+    
+    def set_progress(self, color_name, progress):
+        """进度条效果 (0.0到1.0)"""
+        if color_name in self.COLORS:
+            color = self.COLORS[color_name]
+            lit_leds = int(self.num_leds * progress)
+            for i in range(self.num_leds):
+                if i < lit_leds:
+                    self.np[i] = color
+                else:
+                    self.np[i] = (0, 0, 0)
+            self.np.write()
+    
+    def clear(self):
+        """关闭所有LED"""
+        self.set_all("idle")
+
+
 class ESP32RealtimeClient:
     """
     ESP32-S3 实时对话客户端 (暴力硬件缓冲版)
     思路：利用 I2S 硬件自带的超大缓冲区进行背压，取消一切复杂的软件缓冲
     """
     def __init__(self):
-        self.I2S_SCK_I, self.I2S_WS_I, self.I2S_SD_I = Pin(5), Pin(6), Pin(7)
+        self.I2S_SCK_I, self.I2S_WS_I, self.I2S_SD_I = Pin(4), Pin(5), Pin(6)
         self.I2S_SCK_O, self.I2S_WS_O, self.I2S_SD_O = Pin(12), Pin(11), Pin(13)
-        self.WIFI_SSID, self.WIFI_PASSWORD = "xxx", "xxx"
-        self.SERVER_URL = "ws://192.168.1.6:8765"
+        self.WIFI_SSID, self.WIFI_PASSWORD = "Prefoco", "18961210318"
+        self.SERVER_URL = "ws://192.168.2.110:8765"
 
         self.is_running = False
         self.ws = None
         self.audio_queue = [] # 软件音频队列，用于解耦接收和播放
+        
+        # 添加LED控制器
+        self.leds = LEDController(pin_num=9, num_leds=8)
+        self.is_listening = False
+        self.is_playing = False
 
         self.init_wifi()
         self.init_i2s()
 
     def init_wifi(self):
         try:
+            self.leds.set_all("connecting")  # 连接WiFi时显示蓝色
             sta = network.WLAN(network.STA_IF)
             sta.active(True)
             if not sta.isconnected():
@@ -173,11 +242,16 @@ class ESP32RealtimeClient:
                         break
                     time.sleep(0.5)
             if not sta.isconnected():
+                self.leds.set_all("error")  # 连接失败显示红色
                 log("[WiFi] Connect failed, resetting board.")
+                time.sleep(1)
                 machine.reset()
             log("WiFi Connected: {}".format(sta.ifconfig()[0]))
+            self.leds.set_all("idle")  # 连接成功恢复空闲状态
         except Exception as e:
+            self.leds.set_all("error")  # 异常时显示红色
             log(f"[WiFi] Internal error: {e}, resetting board.")
+            time.sleep(1)
             machine.reset()
 
     def init_i2s(self):
@@ -197,6 +271,11 @@ class ESP32RealtimeClient:
         log("[Record] Task started.")
         while self.is_running:
             try:
+                if not self.is_listening:
+                    self.is_listening = True
+                    self.is_playing = False
+                    self.leds.set_all("listening")  # 开始聆听时亮黄灯
+                
                 n = self.audio_in.readinto(read_buf)
                 if n > 0: 
                     await self.ws.send_bytes(read_buf[:n])
@@ -206,11 +285,18 @@ class ESP32RealtimeClient:
                         free_kb = gc.mem_free() // 1024
                         log(f"[Record] Sent {total_sent // 1024} KB, free={free_kb} KB")
                         last_log_sent = total_sent
+                else:
+                    # 如果没有数据可读，可能停止聆听状态
+                    if self.is_listening and len(self.audio_queue) > 0:
+                        self.is_listening = False
+                        self.leds.set_all("idle")
+                
                 await asyncio.sleep(0)
             except Exception as e:
                 free_kb = gc.mem_free() // 1024
                 log(f"[Record] Error: {e}, free={free_kb} KB")
                 self.is_running = False
+                self.leds.set_all("error")
                 break
 
     async def recv_task(self):
@@ -223,6 +309,13 @@ class ESP32RealtimeClient:
                 if msg.type == 0x2: # BINARY AUDIO
                     # 将音频放入队列，不阻塞接收循环
                     self.audio_queue.append(msg.data)
+                    
+                    # 如果开始收到音频数据，切换到播放状态
+                    if not self.is_playing and len(self.audio_queue) > 0:
+                        self.is_playing = True
+                        self.is_listening = False
+                        self.leds.set_all("playing")  # 开始播放时亮绿灯
+                    
                     # 限制队列长度防止内存溢出 (约 2s 的音频)
                     if len(self.audio_queue) > 40:
                         self.audio_queue.pop(0)
@@ -243,6 +336,8 @@ class ESP32RealtimeClient:
                             if data.get("command") == "stop":
                                 log("[Play] Stop command received!")
                                 self.audio_queue.clear()
+                                self.is_playing = False
+                                self.leds.set_all("idle")  # 停止播放
                                 self.audio_out.deinit()
                                 self.init_i2s()
                         else:
@@ -251,22 +346,32 @@ class ESP32RealtimeClient:
                         log(f"[Msg Parse Error] {e}: {msg.data}")
                         if "stop" in msg.data:
                             self.audio_queue.clear()
+                            self.is_playing = False
+                            self.leds.set_all("idle")  # 停止播放
                             self.audio_out.deinit()
                             self.init_i2s()
                 else:
                     log(f"[WS Recv Other] Type: {msg.type}")
                 
+                # 检查队列状态，如果队列为空且不在聆听状态，恢复空闲
+                if len(self.audio_queue) == 0 and not self.is_listening:
+                    self.is_playing = False
+                    self.leds.set_all("idle")
+                
                 if self.audio_queue and len(self.audio_queue) % 20 == 0:
                     free_kb = gc.mem_free() // 1024
                     log(f"[Recv] Queue={len(self.audio_queue)}, free={free_kb} KB")
+                
                 await asyncio.sleep(0)
         except Exception as e:
             free_kb = gc.mem_free() // 1024
             log(f"[Recv] Error: {e}, free={free_kb} KB")
             self.is_running = False
+            self.leds.set_all("error")
         finally:
             log(f"[Recv] Task finished, ws.closed={self.ws.closed if self.ws else None}")
             self.is_running = False
+            self.leds.set_all("error")
 
     async def play_task(self):
         """仅负责从队列取数据并喂给 I2S 硬件"""
@@ -278,33 +383,45 @@ class ESP32RealtimeClient:
                 if self.audio_queue:
                     data = self.audio_queue.pop(0)
                     # write 会在硬件缓冲区满时自动阻塞
-                    # 注意：在 MicroPython 中，如果 write 阻塞，它会阻塞整个 asyncio 循环
-                    # 所以我们需要确保在写入前后都有 yield 机会
                     self.audio_out.write(data)
                     total_played += len(data)
+                    
+                    # 显示播放进度
+                    if len(self.audio_queue) > 0:
+                        progress = 1.0 - (len(self.audio_queue) / 40.0)  # 假设最大队列为40
+                        self.leds.set_progress("playing", progress)
                     
                     if total_played - last_log_played >= 24000:
                         free_kb = gc.mem_free() // 1024
                         log(f"[Play] Played {total_played // 1024} KB, free={free_kb} KB")
                         last_log_played = total_played
+                else:
+                    # 队列为空时，如果没有在聆听，恢复空闲状态
+                    if not self.is_listening and self.is_playing:
+                        self.is_playing = False
+                        self.leds.set_all("idle")
                 
                 # 无论是否播放了音频，都必须让出 CPU，否则 recv_task 会被饿死
                 await asyncio.sleep(0) 
             except Exception as e:
                 free_kb = gc.mem_free() // 1024
                 log(f"[Play] Error: {e}, free={free_kb} KB")
+                self.leds.set_all("error")
                 break
 
     async def start(self):
         while True:
             log(f"[System] Free memory: {gc.mem_free() / 1024:.1f} KB")
             try:
+                self.leds.set_all("connecting")  # 连接服务器时显示蓝色
                 self.init_wifi()
                 ws = await connect_ws(self.SERVER_URL)
                 log("[System] Connected to server.")
                 self.ws = ws
                 self.is_running = True
                 self.audio_queue.clear()
+                self.leds.set_all("idle")  # 连接成功恢复空闲
+                
                 # 运行三个核心任务：录音、接收、播放
                 await asyncio.gather(
                     self.record_task(), 
@@ -314,6 +431,7 @@ class ESP32RealtimeClient:
             except Exception as e:
                 log(f"[System] Connection error: {e}")
                 self.is_running = False
+                self.leds.set_all("error")  # 错误时显示红色
                 if self.ws:
                     await self.ws.close()
                     self.ws = None
@@ -322,5 +440,9 @@ class ESP32RealtimeClient:
                 gc.collect()
 
 if __name__ == "__main__":
-    asyncio.run(ESP32RealtimeClient().start())
-
+    # 初始化时显示连接状态
+    client = ESP32RealtimeClient()
+    # 启动前显示呼吸灯效果
+    for _ in range(2):  # 呼吸2次
+        client.leds.set_breathing("connecting", speed=20)
+    asyncio.run(client.start())
