@@ -1,3 +1,4 @@
+        # StartConnection request
 import gzip
 import json
 from typing import Dict, Any
@@ -24,10 +25,10 @@ class RealtimeDialogClient:
         print(f"url: {self.config['base_url']}, headers: {self.config['headers']}")
         self.ws = await websockets.connect(
             self.config['base_url'],
-            additional_headers=self.config['headers'],
+            extra_headers=self.config['headers'],
             ping_interval=None
         )
-        self.logid = self.ws.response.headers.get("X-Tt-Logid")
+        self.logid = self.ws.response_headers.get("X-Tt-Logid")
         print(f"dialog server response logid: {self.logid}")
 
         # StartConnection request
