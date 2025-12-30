@@ -209,7 +209,7 @@ class LEDController:
 
 class ESP32RealtimeClient:
     """
-    ESP32-S3 实时对话客户端 (暴力硬件缓冲版)
+    ESP32-S3 实时对话客户端
     思路：利用 I2S 硬件自带的超大缓冲区进行背压，取消一切复杂的软件缓冲
     """
     def __init__(self):
@@ -446,4 +446,5 @@ if __name__ == "__main__":
     for _ in range(2):  # 呼吸2次
         client.leds.set_breathing("connecting", speed=20)
     asyncio.run(client.start())
+
 
