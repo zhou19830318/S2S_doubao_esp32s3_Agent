@@ -215,7 +215,7 @@ class ESP32RealtimeClient:
     def __init__(self):
         self.I2S_SCK_I, self.I2S_WS_I, self.I2S_SD_I = Pin(4), Pin(5), Pin(6)
         self.I2S_SCK_O, self.I2S_WS_O, self.I2S_SD_O = Pin(12), Pin(11), Pin(13)
-        self.WIFI_SSID, self.WIFI_PASSWORD = "Prefoco", "18961210318"
+        self.WIFI_SSID, self.WIFI_PASSWORD = "xxx", "xxx"
         self.SERVER_URL = "ws://192.168.2.110:8765"
 
         self.is_running = False
@@ -446,3 +446,4 @@ if __name__ == "__main__":
     for _ in range(2):  # 呼吸2次
         client.leds.set_breathing("connecting", speed=20)
     asyncio.run(client.start())
+
