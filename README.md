@@ -182,7 +182,7 @@ S2S_doubao_esp32s3_Agent/
 ├── esp32_client.py        # ESP32客户端主文件
 ├── ssd1306.py             # ssd1306屏幕驱动
 ├── ufont.py               # 文字显示处理代码
-├── esp32_client.py        # ESP32客户端主文件
+├── easydisplay.py         # 屏幕显示封装函数
 └── README.md              # 项目说明文档
 ```
 
