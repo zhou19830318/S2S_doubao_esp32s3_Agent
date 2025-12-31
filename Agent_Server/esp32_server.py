@@ -87,6 +87,17 @@ class ESP32WebSocketServer:
             if llm_text:
                 log(f"[LLM] {llm_text}")
                 any_text = True
+            try:
+                if asr_text:
+                    if hasattr(websocket, 'open') and not websocket.open:
+                        return
+                    await websocket.send(json.dumps({"type": "asr", "text": asr_text}))
+                if llm_text:
+                    if hasattr(websocket, 'open') and not websocket.open:
+                        return
+                    await websocket.send(json.dumps({"type": "llm", "text": llm_text}))
+            except Exception as e:
+                log(f"[Server] Text forward error: {e}")
             if not any_text:
                 try:
                     log(f"[Server] Event {event_id} payload={json.dumps(payload, ensure_ascii=False)}")
