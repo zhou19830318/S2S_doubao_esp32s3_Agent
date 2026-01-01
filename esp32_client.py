@@ -163,10 +163,27 @@ class ESP32RealtimeClient:
         self.text_queue = []
         self.display = None
         self.font = None
+        self.display_log_lines = []
+        self.display_log_max_lines = 4
 
         self.init_wifi()
         self.init_i2s()
         self.init_display()
+
+    def display_log(self, text):
+        if self.display and self.font:
+            try:
+                self.display_log_lines.append(text)
+                if len(self.display_log_lines) > self.display_log_max_lines:
+                    self.display_log_lines.pop(0)
+                self.display.fill(0)
+                y = 0
+                for line in self.display_log_lines:
+                    self.font.text(self.display, line, 0, y, show=False, clear=False, auto_wrap=False, line_spacing=0)
+                    y += 16
+                self.display.show()
+            except Exception as e:
+                log(f"[Display] Log error: {e}")
 
     def init_display(self):
         try:
@@ -183,6 +200,7 @@ class ESP32RealtimeClient:
             sta = network.WLAN(network.STA_IF)
             sta.active(True)
             if not sta.isconnected():
+                self.display_log("WiFi connecting...")
                 sta.connect(self.WIFI_SSID, self.WIFI_PASSWORD)
                 for _ in range(40):
                     if sta.isconnected():
@@ -190,10 +208,14 @@ class ESP32RealtimeClient:
                     time.sleep(0.5)
             if not sta.isconnected():
                 log("[WiFi] Connect failed, resetting board.")
+                self.display_log("WiFi connect failed")
                 machine.reset()
-            log("WiFi Connected: {}".format(sta.ifconfig()[0]))
+            ip = sta.ifconfig()[0]
+            log("WiFi Connected: {}".format(ip))
+            self.display_log("WiFi OK " + ip)
         except Exception as e:
             log(f"[WiFi] Internal error: {e}, resetting board.")
+            self.display_log("WiFi error")
             machine.reset()
 
     def init_i2s(self):
@@ -336,8 +358,10 @@ class ESP32RealtimeClient:
             log(f"[System] Free memory: {gc.mem_free() / 1024:.1f} KB")
             try:
                 self.init_wifi()
+                self.display_log("Connecting server...")
                 ws = await connect_ws(self.SERVER_URL)
                 log("[System] Connected to server.")
+                self.display_log("Server connected")
                 self.ws = ws
                 self.is_running = True
                 self.audio_queue.clear()
@@ -361,3 +385,4 @@ class ESP32RealtimeClient:
 
 if __name__ == "__main__":
     asyncio.run(ESP32RealtimeClient().start())
+
