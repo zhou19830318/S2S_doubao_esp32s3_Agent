@@ -42,9 +42,9 @@
 ### 接线参考
 | 模块名称 | 引脚 | 连接至ESP32-S3 |
 |---------|------|---------------|
-| INMP441 (麦克风) | SCK | GPIO5 |
-| | WS | GPIO6 |
-| | SD | GPIO7 |
+| INMP441 (麦克风) | SCK | GPIO4 |
+| | WS | GPIO5 |
+| | SD | GPIO6 |
 | MAX98357A (功放) | BCLK | GPIO12 |
 | | LRC | GPIO11 |
 | | DIN | GPIO13 |
@@ -105,7 +105,7 @@ python Agent_Server/esp32_server.py
    - 修改以下配置：
      ```python
      # 修改I2S引脚配置
-     self.I2S_SCK_I, self.I2S_WS_I, self.I2S_SD_I = Pin(5), Pin(6), Pin(7)
+     self.I2S_SCK_I, self.I2S_WS_I, self.I2S_SD_I = Pin(4), Pin(5), Pin(6)
      self.I2S_SCK_O, self.I2S_WS_O, self.I2S_SD_O = Pin(12), Pin(11), Pin(13)
      
      # 修改Wi-Fi信息
@@ -175,15 +175,19 @@ python Agent_Server/esp32_server.py
 ```
 S2S_doubao_esp32s3_Agent/
 ├── Agent_Server/
-│   ├── config.py          # 服务器配置（密钥等）
-│   ├── esp32_server.py    # 主服务器文件
-│   ├── local_agent_test.py # API测试文件
-│   └── requirements.txt    # Python依赖
-├── esp32_client.py        # ESP32客户端主文件
-├── ssd1306.py             # ssd1306屏幕驱动
-├── ufont.py               # 文字显示处理代码
-├── easydisplay.py         # 屏幕显示封装函数
-└── README.md              # 项目说明文档
+│   ├── esp32_server.py           # 主服务器文件，处理与ESP32的WebSocket连接
+│   ├── bridge_session.py         # 核心逻辑，桥接ESP32和火山引擎
+│   ├── realtime_dialog_client.py # 与火山引擎WebSocket服务交互的客户端
+│   ├── config.py                 # 服务器配置（密钥、云服务参数等）
+│   ├── protocol.py               # 定义与火山引擎通信的底层协议
+│   ├── local_agent_test.py       # 本地测试脚本（使用PyAudio模拟麦克风和扬声器）
+│   ├── audio_manager.py          # 本地音频设备管理（local_agent_test.py使用）
+│   └── requirements.txt          # Python依赖
+├── esp32_client.py               # ESP32客户端主文件 (MicroPython)
+├── ssd1306.py                    # ssd1306屏幕驱动
+├── ufont.py                      # 文字显示处理代码
+├── easydisplay.py                # 屏幕显示封装函数
+└── README.md                     # 项目说明文档
 ```
 
 ## 🎯 扩展功能
