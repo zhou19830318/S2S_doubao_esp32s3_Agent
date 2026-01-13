@@ -208,3 +208,4 @@ S2S_doubao_esp32s3_Agent/
 - [MicroPython官网](https://micropython.org/)
 - [Thonny IDE](https://thonny.org/)
 - [ESP32官方文档](https://docs.espressif.com/)
+- [CSDN教程文档](【手把手教你一步一步搭建基于火山引擎端到端语音大模型的智能语音Agent（ESP32-S3 + micropython） -  CSDN App】https://blog.csdn.net/acldy833/article/details/156279168?sharetype=blogdetail&shareId=156279168&sharerefer=APP&sharesource=acldy833&sharefrom=link)
